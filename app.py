@@ -9,7 +9,7 @@ from utils import draw_bboxes, process_video
 st.set_page_config(page_title="⚽ Ball Possession Tracker", layout="wide")
 
 # Optional CSS for professional look
-with open("assets/style.css") as f:
+with open("style.css") as f:
     st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
 st.title("⚽ Football Ball Possession Tracker")
