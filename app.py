@@ -24,7 +24,7 @@ threshold = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.5, 0.01)
 start = st.sidebar.button("Start Prediction")
 stop  = st.sidebar.button("Stop Prediction")
 
-# Initialize running flag
+# Initialize running flag for video
 if "running" not in st.session_state:
     st.session_state.running = False
 if start:
@@ -60,13 +60,12 @@ model = load_model()
 uploaded_file = st.file_uploader("Upload Image or Video", type=["jpg","jpeg","png","mp4","avi"])
 image_placeholder = st.empty()
 
-# --- Main prediction block ---
+# --- Main prediction logic ---
 if uploaded_file is not None:
     if model is None:
         st.warning("Model is not loaded. Cannot perform prediction.")
-    elif not st.session_state.running:
-        st.info("Press 'Start Prediction' in the sidebar to run detection.")
     else:
+        # --- IMAGE: auto-predict ---
         if uploaded_file.type.startswith("image"):
             image = Image.open(uploaded_file).convert("RGB")
             image_np = np.array(image)
@@ -78,33 +77,37 @@ if uploaded_file is not None:
             except Exception as e:
                 st.error(f"Prediction failed: {e}")
 
+        # --- VIDEO: controlled by Start/Stop ---
         elif uploaded_file.type.startswith("video"):
-            st.info("Processing video frames...")
-            st_progress = st.progress(0)
+            st.info("Video prediction requires pressing 'Start Prediction' in the sidebar.")
+            if st.session_state.running:
+                st_progress = st.progress(0)
 
-            # Save video temporarily
-            with open("temp_video.mp4", "wb") as f:
-                f.write(uploaded_file.read())
+                # Save video temporarily
+                with open("temp_video.mp4", "wb") as f:
+                    f.write(uploaded_file.read())
 
-            def stop_flag():
-                return st.session_state.running
+                def stop_flag():
+                    return st.session_state.running
 
-            try:
-                processed_video_path, timeline_data = process_video(
-                    "temp_video.mp4", model, threshold, st_progress, stop_flag
-                )
-                st.video(processed_video_path)
+                try:
+                    processed_video_path, timeline_data = process_video(
+                        "temp_video.mp4", model, threshold, st_progress, stop_flag
+                    )
+                    st.video(processed_video_path)
 
-                # Timeline chart
-                st.subheader("Ball-in-Play Timeline")
-                df = pd.DataFrame(timeline_data)
-                chart = alt.Chart(df).mark_bar().encode(
-                    x='frame:Q',
-                    y='has_ball:Q',
-                    tooltip=['frame','has_ball']
-                ).properties(height=200)
-                st.altair_chart(chart, use_container_width=True)
+                    # Timeline chart
+                    st.subheader("Ball-in-Play Timeline")
+                    df = pd.DataFrame(timeline_data)
+                    chart = alt.Chart(df).mark_bar().encode(
+                        x='frame:Q',
+                        y='has_ball:Q',
+                        tooltip=['frame','has_ball']
+                    ).properties(height=200)
+                    st.altair_chart(chart, use_container_width=True)
 
-                st.success("Video processed successfully!")
-            except Exception as e:
-                st.error(f"Video prediction failed: {e}")
+                    st.success("Video processed successfully!")
+                except Exception as e:
+                    st.error(f"Video prediction failed: {e}")
+            else:
+                st.info("Press 'Start Prediction' in the sidebar to run video detection.")
