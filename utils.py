@@ -3,7 +3,7 @@ import numpy as np
 import streamlit as st
 
 def draw_bboxes(image_np, predictions):
-    """Draw bounding boxes on the image"""
+    """Draw bounding boxes filtered by confidence."""
     for pred in predictions:
         x1, y1 = int(pred['x']), int(pred['y'])
         x2, y2 = int(pred['x'] + pred['width']), int(pred['y'] + pred['height'])
@@ -15,8 +15,8 @@ def draw_bboxes(image_np, predictions):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
     return cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
 
-def process_video(video_path, model, st_progress=None):
-    """Process video frame by frame with Roboflow model"""
+def process_video(video_path, model, threshold=0.5, st_progress=None, stop_flag=None):
+    """Process video frame by frame with stop/start functionality."""
     cap = cv2.VideoCapture(video_path)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -25,7 +25,6 @@ def process_video(video_path, model, st_progress=None):
 
     out = cv2.VideoWriter("processed_video.mp4",
                           cv2.VideoWriter_fourcc(*'mp4v'), fps, (width,height))
-
     timeline_data = []
     frame_idx = 0
 
@@ -33,22 +32,20 @@ def process_video(video_path, model, st_progress=None):
         ret, frame = cap.read()
         if not ret:
             break
+        if stop_flag and not stop_flag():
+            break
 
-        # Run inference
-        results = model.predict(frame).json()
-        predictions = results.get("predictions", [])
+        results = model.predict(frame)
+        predictions = [p for p in results.get("predictions", []) if p['confidence'] >= threshold]
 
-        # Draw bboxes
         frame_out = draw_bboxes(frame, predictions)
         out.write(cv2.cvtColor(frame_out, cv2.COLOR_RGB2BGR))
 
-        # Record ball possession
         has_ball_flag = 1 if any(p['class']=="has_ball" for p in predictions) else 0
         timeline_data.append({"frame": frame_idx, "has_ball": has_ball_flag})
 
-        # Update progress bar
         if st_progress:
-            st_progress.progress(min(frame_idx/total_frames,1.0))
+            st_progress.progress(min(frame_idx/total_frames, 1.0))
 
         frame_idx += 1
 
