@@ -7,7 +7,7 @@ import tempfile
 import pandas as pd
 import altair as alt
 from collections import Counter
-from utils import draw_bboxes, process_video
+from utils import draw_bboxes, process_video  # Your helper functions
 import os
 
 # --- Page setup ---
@@ -23,7 +23,7 @@ if os.path.exists(css_path):
 
 # --- Sidebar controls ---
 st.sidebar.header("Detection Settings")
-threshold = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.5, 0.01)
+confidence_threshold = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.5, 0.01)
 start = st.sidebar.button("▶️ Start Prediction")
 stop  = st.sidebar.button("❌ Stop Prediction")
 
@@ -35,30 +35,33 @@ if start:
 if stop:
     st.session_state.running = False
 
-# --- Roboflow Model Loader ---
+# --- Robust Roboflow model loader ---
 @st.cache_resource
 def load_model():
-    api_key = st.secrets.get("ROBOFLOW_API_KEY")
-    workspace = st.secrets.get("WORKSPACE")
-    project_name = st.secrets.get("PROJECT")
-    version_number = st.secrets.get("VERSION")
-
-    if not all([api_key, workspace, project_name, version_number]):
-        st.error("❌ Roboflow secrets missing! Please check API key, workspace, project, version.")
-        return None
-
     try:
+        api_key = st.secrets.get("ROBOFLOW_API_KEY")
+        workspace = st.secrets.get("WORKSPACE")
+        project_name = st.secrets.get("PROJECT")
+        version_number = st.secrets.get("VERSION")
+
+        if not all([api_key, workspace, project_name, version_number]):
+            st.error("❌ Missing Roboflow secrets!")
+            return None
+
         rf = Roboflow(api_key=api_key)
-        workspace_obj = rf.workspace(workspace)
-        project_obj = workspace_obj.project(project_name)
-        model = project_obj.version(version_number).model
+        ws = rf.workspace(workspace)
+        proj = ws.project(project_name)
+        model = proj.version(version_number).model
+
         if model is None:
-            st.error("❌ Model not ready. Ensure training is complete.")
-        else:
-            st.success(f"✅ Model loaded: {project_name} v{version_number}")
+            st.error(f"❌ Model version {version_number} not ready. Check Roboflow dashboard.")
+            return None
+
+        st.success(f"✅ Roboflow model loaded: {project_name} v{version_number}")
         return model
+
     except Exception as e:
-        st.error(f"❌ Failed to load model: {e}")
+        st.error(f"❌ Failed to load Roboflow model: {e}")
         return None
 
 model = load_model()
@@ -96,7 +99,7 @@ if uploaded_file is not None:
                 with st.spinner("🔍 Detecting ball possession..."):
                     try:
                         # Roboflow prediction
-                        preds = model.predict(temp_path).json()
+                        preds = model.predict(temp_path, confidence=confidence_threshold).json()
                         detections = preds.get("predictions", [])
 
                         image_cv = np.array(image)
@@ -144,7 +147,7 @@ if uploaded_file is not None:
 
                 try:
                     processed_video_path, timeline_data = process_video(
-                        "temp_video.mp4", model, threshold, st_progress, stop_flag
+                        "temp_video.mp4", model, confidence_threshold, st_progress, stop_flag
                     )
                     st.video(processed_video_path)
 
