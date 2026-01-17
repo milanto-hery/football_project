@@ -29,18 +29,27 @@ if start:
 if stop:
     st.session_state.running = False
 
-# Load Roboflow model (cached)
+# Load Roboflow model (cached) with error handling
 @st.cache_resource
 def load_model():
-    api_key = st.secrets["ROBOFLOW_API_KEY"]
-    workspace = st.secrets["WORKSPACE"]
-    project_name = st.secrets["PROJECT"]
-    version_number = st.secrets["VERSION"]
+    api_key = st.secrets.get("ROBOFLOW_API_KEY", None)
+    workspace = st.secrets.get("WORKSPACE", None)
+    project_name = st.secrets.get("PROJECT", None)
+    version_number = st.secrets.get("VERSION", None)
 
-    rf = Roboflow(api_key=api_key)
-    project = rf.workspace(workspace).project(project_name)
-    model = project.version(version_number).model
-    return model
+    if not all([api_key, workspace, project_name, version_number]):
+        st.error("Roboflow secrets missing! Please check your Streamlit secrets.")
+        return None
+
+    try:
+        rf = Roboflow(api_key=api_key)
+        project = rf.workspace(workspace).project(project_name)
+        model = project.version(version_number).model
+        st.success("Roboflow model loaded successfully!")
+        return model
+    except Exception as e:
+        st.error(f"Failed to load Roboflow model: {e}")
+        return None
 
 model = load_model()
 
@@ -49,38 +58,41 @@ uploaded_file = st.file_uploader("Upload Image or Video", type=["jpg","jpeg","pn
 image_placeholder = st.empty()
 
 if uploaded_file is not None and st.session_state.running:
-    if uploaded_file.type.startswith("image"):
-        image = Image.open(uploaded_file).convert("RGB")
-        image_np = np.array(image)
-        results = model.predict(image_np)
-        predictions = [p for p in results.get("predictions", []) if p['confidence'] >= threshold]
-        output_img = draw_bboxes(image_np, predictions)
-        image_placeholder.image(output_img, use_column_width=True)
+    if model is None:
+        st.warning("Model is not loaded. Cannot perform prediction.")
+    else:
+        if uploaded_file.type.startswith("image"):
+            image = Image.open(uploaded_file).convert("RGB")
+            image_np = np.array(image)
+            results = model.predict(image_np)
+            predictions = [p for p in results.get("predictions", []) if p['confidence'] >= threshold]
+            output_img = draw_bboxes(image_np, predictions)
+            image_placeholder.image(output_img, use_column_width=True)
 
-    elif uploaded_file.type.startswith("video"):
-        st.info("Processing video frames...")
-        st_progress = st.progress(0)
+        elif uploaded_file.type.startswith("video"):
+            st.info("Processing video frames...")
+            st_progress = st.progress(0)
 
-        # Save video temporarily
-        with open("temp_video.mp4", "wb") as f:
-            f.write(uploaded_file.read())
+            # Save video temporarily
+            with open("temp_video.mp4", "wb") as f:
+                f.write(uploaded_file.read())
 
-        def stop_flag():
-            return st.session_state.running
+            def stop_flag():
+                return st.session_state.running
 
-        processed_video_path, timeline_data = process_video(
-            "temp_video.mp4", model, threshold, st_progress, stop_flag
-        )
-        st.video(processed_video_path)
+            processed_video_path, timeline_data = process_video(
+                "temp_video.mp4", model, threshold, st_progress, stop_flag
+            )
+            st.video(processed_video_path)
 
-        # Timeline chart
-        st.subheader("Ball-in-Play Timeline")
-        df = pd.DataFrame(timeline_data)
-        chart = alt.Chart(df).mark_bar().encode(
-            x='frame:Q',
-            y='has_ball:Q',
-            tooltip=['frame','has_ball']
-        ).properties(height=200)
-        st.altair_chart(chart, use_container_width=True)
+            # Timeline chart
+            st.subheader("Ball-in-Play Timeline")
+            df = pd.DataFrame(timeline_data)
+            chart = alt.Chart(df).mark_bar().encode(
+                x='frame:Q',
+                y='has_ball:Q',
+                tooltip=['frame','has_ball']
+            ).properties(height=200)
+            st.altair_chart(chart, use_container_width=True)
 
-        st.success("Video processed successfully!")
+            st.success("Video processed successfully!")
